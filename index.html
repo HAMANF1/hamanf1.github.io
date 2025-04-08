@@ -1,0 +1,2524 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نبرد نهایی: میرزازاده vs ایزدفر</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            font-family: 'Arial', sans-serif;
+            cursor: crosshair;
+            user-select: none;
+        }
+        #gameCanvas {
+            display: block;
+            margin: 20px auto;
+            background-image: url('https://www.dropbox.com/scl/fi/ldjty5aao135r47ftng7w/images.jpg?rlkey=kzsu2tbho9xg7ki2jxzlc7tq4&st=0ztw1pk8&dl=1');
+            background-size: cover;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        #gameInfo {
+            color: white;
+            text-align: center;
+            padding: 15px;
+            font-size: 22px;
+            background-color: rgba(0, 0, 0, 0.7);
+            margin: 10px auto;
+            width: 800px;
+            border-radius: 10px;
+        }
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            display: none;
+            z-index: 100;
+            width: 500px;
+            box-shadow: 0 0 30px rgba(255,255,255,0.2);
+        }
+        .game-over h1 {
+            font-size: 42px;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+        .game-over p {
+            font-size: 24px;
+            margin-top: 20px;
+        }
+        .confetti {
+            position: absolute;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameInfo">
+        سلامت بازیکن: <span id="playerHealth">100</span> | 
+        سلامت آقای ایزدفر: <span id="enemyHealth">100</span>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="gameOver" class="game-over">
+        <h1 id="resultText"></h1>
+        <p>برای شروع مجدد Enter را بزنید</p>
+    </div>
+
+    <script>
+        // عناصر بازی
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const playerHealthEl = document.getElementById('playerHealth');
+        const enemyHealthEl = document.getElementById('enemyHealth');
+        const gameOverEl = document.getElementById('gameOver');
+        const resultTextEl = document.getElementById('resultText');
+
+        // تصاویر بازی
+        const images = {
+            player: new Image(),
+            enemy: new Image(),
+            playerBullet: new Image(),
+            enemyBullet: new Image(),
+            background: new Image()
+        };
+
+        // بارگذاری تصاویر
+        images.player.src = 'https://www.dropbox.com/scl/fi/81uhhp16tvav7lroqysim/player.png?rlkey=5sfcisnzwjjyoc3jbqevt9w21&st=8ggqqfaw&dl=1';
+        images.enemy.src = 'https://www.dropbox.com/scl/fi/aq7jej7lx4ivvyyn0xud0/enemy.png?rlkey=ey8qbl1lm9237aqh613fse8mw&st=6o8zsquo&dl=1';
+        images.background.src = 'https://i.postimg.cc/MTmJRMGh/Versus-battle-screen-background-with-red-and-blue-bokeh-lights-design-3003.jpg';
+        images.playerBullet.src = 'https://www.dropbox.com/scl/fi/xpjdral0g4vrgcp8875yh/imeages.png?rlkey=2mciz8v8tmk6crqohk2hidma3&st=5ws5212g&dl=1';
+        images.enemyBullet.src = 'https://www.dropbox.com/scl/fi/l8sqidp2u3f0r0ieq7kt4/images.png?rlkey=vk07u8tpfpvt26zf353qysrli&st=umarb41p&dl=1';
+
+        // وضعیت بازی
+        const gameState = {
+            player: {
+                x: 100,
+                y: 300,
+                width: 70,
+                height: 70,
+                speed: 7,
+                health: 100,
+                bullets: [],
+                lastShot: 0,
+                shotDelay: 400
+            },
+            enemy: {
+                x: 700,
+                y: 300,
+                width: 70,
+                height: 70,
+                speed: 5,
+                health: 100,
+                bullets: [],
+                lastShot: 0,
+                shotDelay: 1200,
+                moveTimer: 0,
+                moveInterval: 50,
+                direction: 0,
+                targetY: 300
+            },
+            keys: {},
+            gameOver: false,
+            confetti: [],
+            lastTime: 0
+        };
+
+        // کنترل‌های صفحه کلید
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            gameState.keys[key] = true;
+            
+            // شروع مجدد بازی با اینتر
+            if (key === 'enter' && gameState.gameOver) {
+                restartGame();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            gameState.keys[key] = false;
+        });
+
+        // تیراندازی با کلیک ماوس
+        canvas.addEventListener('click', (e) => {
+            if (!gameState.gameOver) {
+                const now = Date.now();
+                if (now - gameState.player.lastShot > gameState.player.shotDelay) {
+                    shootPlayer();
+                    gameState.player.lastShot = now;
+                }
+            }
+        });
+
+        function shootPlayer() {
+            gameState.player.bullets.push({
+                x: gameState.player.x + gameState.player.width,
+                y: gameState.player.y + gameState.player.height / 2 - 15,
+                width: 70,
+                height: 50,
+                speed: 15
+            });
+        }
+
+        function shootEnemy() {
+            gameState.enemy.bullets.push({
+                x: gameState.enemy.x - 20,
+                y: gameState.enemy.y + gameState.enemy.height / 2 - 15,
+                width: 70,
+                height: 50,
+                speed: 12
+            });
+        }
+
+        function update(timestamp) {
+            if (gameState.gameOver) return;
+
+            const deltaTime = timestamp - gameState.lastTime;
+            gameState.lastTime = timestamp;
+
+            // حرکت بازیکن با W و S
+            if (gameState.keys['w'] || gameState.keys['arrowup']) {
+                gameState.player.y = Math.max(0, gameState.player.y - gameState.player.speed);
+            }
+            if (gameState.keys['s'] || gameState.keys['arrowdown']) {
+                gameState.player.y = Math.min(canvas.height - gameState.player.height, 
+                                           gameState.player.y + gameState.player.speed);
+            }
+
+            // هوش مصنوعی پیشرفته برای دشمن
+            gameState.enemy.moveTimer += deltaTime;
+            
+            if (gameState.enemy.moveTimer >= gameState.enemy.moveInterval) {
+                gameState.enemy.moveTimer = 0;
+                
+                // تغییر هدف به صورت نرم
+                if (Math.random() < 0.3) {
+                    gameState.enemy.targetY = Math.random() * (canvas.height - gameState.enemy.height);
+                } else {
+                    // دنبال کردن بازیکن با احتمال بیشتر
+                    gameState.enemy.targetY = gameState.player.y;
+                }
+            }
+
+            // حرکت نرم دشمن به سمت هدف
+            const dy = gameState.enemy.targetY - gameState.enemy.y;
+            gameState.enemy.y += dy * 0.05;
+
+            // محدود کردن موقعیت دشمن
+            gameState.enemy.y = Math.max(0, Math.min(canvas.height - gameState.enemy.height, gameState.enemy.y));
+
+            // تیراندازی دشمن
+            const now = Date.now();
+            if (now - gameState.enemy.lastShot > gameState.enemy.shotDelay) {
+                const playerInLine = Math.abs(
+                    (gameState.player.y + gameState.player.height/2) - 
+                    (gameState.enemy.y + gameState.enemy.height/2)
+                ) < 100;
+                
+                if (playerInLine || Math.random() < 0.5) {
+                    shootEnemy();
+                    gameState.enemy.lastShot = now;
+                }
+            }
+
+            // حرکت تیرها
+            gameState.player.bullets.forEach(bullet => {
+                bullet.x += bullet.speed;
+            });
+
+            gameState.enemy.bullets.forEach(bullet => {
+                bullet.x -= bullet.speed;
+            });
+
+            // تشخیص برخورد تیرها
+            checkCollisions();
+
+            // حذف تیرهای خارج از صفحه
+            gameState.player.bullets = gameState.player.bullets.filter(bullet => 
+                bullet.x < canvas.width + 50);
+                
+            gameState.enemy.bullets = gameState.enemy.bullets.filter(bullet => 
+                bullet.x > -50);
+
+            // بررسی پایان بازی
+            if (gameState.player.health <= 0 || gameState.enemy.health <= 0) {
+                endGame();
+            }
+
+            // به روزرسانی نمایش سلامت
+            playerHealthEl.textContent = gameState.player.health;
+            enemyHealthEl.textContent = gameState.enemy.health;
+        }
+
+        function checkCollisions() {
+            // تیرهای بازیکن به دشمن
+            gameState.player.bullets.forEach((bullet, index) => {
+                if (isColliding(bullet, gameState.enemy)) {
+                    gameState.enemy.health -= 12;
+                    gameState.player.bullets.splice(index, 1);
+                    createHitEffect(bullet.x, bullet.y, '#00ff00');
+                }
+            });
+
+            // تیرهای دشمن به بازیکن
+            gameState.enemy.bullets.forEach((bullet, index) => {
+                if (isColliding(bullet, gameState.player)) {
+                    gameState.player.health -= 10;
+                    gameState.enemy.bullets.splice(index, 1);
+                    createHitEffect(bullet.x, bullet.y, '#ff0000');
+                }
+            });
+        }
+
+        function isColliding(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        function createHitEffect(x, y, color) {
+            for (let i = 0; i < 10; i++) {
+                gameState.confetti.push({
+                    x: x,
+                    y: y,
+                    color: color,
+                    size: Math.random() * 8 + 4,
+                    speedX: (Math.random() - 0.5) * 10,
+                    speedY: (Math.random() - 0.5) * 10,
+                    life: 30
+                });
+            }
+        }
+
+        function createConfetti() {
+            for (let i = 0; i < 300; i++) {
+                gameState.confetti.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * -100,
+                    color: `hsl(${Math.random() * 360}, 100%, 50%)`,
+                    size: Math.random() * 15 + 5,
+                    speedX: (Math.random() - 0.5) * 4,
+                    speedY: Math.random() * 8 + 4,
+                    rotation: Math.random() * Math.PI * 2,
+                    rotationSpeed: (Math.random() - 0.5) * 0.2,
+                    life: 100 + Math.random() * 100
+                });
+            }
+        }
+
+        function updateConfetti() {
+            for (let i = gameState.confetti.length - 1; i >= 0; i--) {
+                const c = gameState.confetti[i];
+                c.x += c.speedX;
+                c.y += c.speedY;
+                c.rotation += c.rotationSpeed;
+                c.life--;
+                
+                if (c.life <= 0) {
+                    gameState.confetti.splice(i, 1);
+                }
+            }
+        }
+
+        function drawConfetti() {
+            gameState.confetti.forEach(c => {
+                ctx.save();
+                ctx.translate(c.x, c.y);
+                ctx.rotate(c.rotation);
+                ctx.fillStyle = c.color;
+                ctx.fillRect(-c.size/2, -c.size/2, c.size, c.size);
+                ctx.restore();
+            });
+        }
+
+        function endGame() {
+            gameState.gameOver = true;
+            createConfetti();
+            
+            if (gameState.player.health <= 0) {
+                resultTextEl.textContent = 'آقای ایزدفر برنده شد!';
+            } else {
+                resultTextEl.textContent = 'آفرین! شما آقای ایزدفر را شکست دادید';
+            }
+            
+            gameOverEl.style.display = 'block';
+        }
+
+        function draw() {
+            // رسم پس‌زمینه
+            ctx.drawImage(images.background, 0, 0, canvas.width, canvas.height);
+
+            // رسم بازیکن
+            ctx.drawImage(images.player, 
+                         gameState.player.x, 
+                         gameState.player.y, 
+                         gameState.player.width, 
+                         gameState.player.height);
+
+            // رسم دشمن
+            ctx.drawImage(images.enemy, 
+                         gameState.enemy.x, 
+                         gameState.enemy.y, 
+                         gameState.enemy.width, 
+                         gameState.enemy.height);
+
+            // رسم تیرهای بازیکن
+            gameState.player.bullets.forEach(bullet => {
+                ctx.drawImage(images.playerBullet, bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+
+            // رسم تیرهای دشمن
+            gameState.enemy.bullets.forEach(bullet => {
+                ctx.drawImage(images.enemyBullet, bullet.x, bullet.y, bullet.width, bullet.height);
+            });
+
+            // نمایش فشفشه
+            updateConfetti();
+            drawConfetti();
+        }
+
+        function restartGame() {
+            gameState.player = {
+                ...gameState.player,
+                x: 100,
+                y: 300,
+                health: 100,
+                bullets: [],
+                lastShot: 0
+            };
+            gameState.enemy = {
+                ...gameState.enemy,
+                x: 700,
+                y: 300,
+                health: 100,
+                bullets: [],
+                targetY: 300,
+                lastShot: 0
+            };
+            gameState.gameOver = false;
+            gameState.confetti = [];
+            gameOverEl.style.display = 'none';
+        }
+
+        // حلقه بازی
+        function gameLoop(timestamp) {
+            update(timestamp);
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // شروع بازی پس از بارگذاری تصاویر
+        let imagesLoaded = 0;
+        function checkImagesLoaded() {
+            imagesLoaded++;
+            if (imagesLoaded === 5) {
+                // تنظیم موقعیت اولیه دشمن
+                gameState.enemy.targetY = gameState.enemy.y;
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        images.player.onload = checkImagesLoaded;
+        images.enemy.onload = checkImagesLoaded;
+        images.background.onload = checkImagesLoaded;
+        images.playerBullet.onload = checkImagesLoaded;
+        images.enemyBullet.onload = checkImagesLoaded;
+        
+        images.player.onerror = () => {
+            console.log('خطا در بارگذاری تصویر بازیکن');
+            checkImagesLoaded();
+        };
+        images.enemy.onerror = () => {
+            console.log('خطا در بارگذاری تصویر دشمن');
+            checkImagesLoaded();
+        };
+        images.background.onerror = () => {
+            console.log('خطا در بارگذاری تصویر پس‌زمینه');
+            checkImagesLoaded();
+        };
+        images.playerBullet.onerror = () => {
+            console.log('خطا در بارگذاری تصویر تیر بازیکن');
+            checkImagesLoaded();
+        };
+        images.enemyBullet.onerror = () => {
+            console.log('خطا در بارگذاری تصویر تیر دشمن');
+            checkImagesLoaded();
+        };
+    </script>
+</body>
+</html>
+<style>
+    /* استایل‌های کنترل موبایل - نسخه نهایی */
+    .mobile-control {
+      display: none;
+      position: fixed;
+      z-index: 100;
+      pointer-events: auto;
+      user-select: none;
+    }
+  
+    #direction-btns {
+  left: 560px;
+  bottom: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+#up-btn {
+  transform: translateY(-60px); /* بالا بردن دکمه بالا */
+}
+
+#down-btn {
+  transform: translateY(60px); /* پایین آوردن دکمه پایین */
+}
+  
+    #up-btn, #down-btn {
+      width: 100px;
+      height: 100px;
+      background-color: rgba(0, 0, 255, 0.5);
+      border-radius: 30px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      font-size: 40px;
+      border: 2px solid white;
+    }
+  
+    #fire-btn {
+      right: -400px;
+      bottom: 130px;
+      width: 80px;
+      height: 80px;
+      background-color: rgba(255, 0, 0, 0.5);
+      border-radius: 50%;
+      background-image: url('https://cdn-icons-png.flaticon.com/512/785/785116.png');
+      background-size: 50%;
+      background-position: center;
+      background-repeat: no-repeat;
+      border: 2px solid white;
+    }
+  
+    #enter-btn {
+      bottom: 20px;
+      left: 100%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 60px;
+      background-color: rgba(0, 255, 0, 0.5);
+      border-radius: 30px;
+      color: white;
+      font-size: 18px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border: 2px solid white;
+    }
+  
+    /* فقط در دستگاه‌های لمسی نمایش داده شود */
+    @media (hover: none) and (pointer: coarse) {
+      .mobile-control {
+        display: flex;
+      }
+    }
+  </style>
+  
+  <!-- اضافه کردن این HTML قبل از بسته شدن تگ body -->
+  <div id="direction-btns" class="mobile-control">
+    <div id="up-btn" class="mobile-control">↑</div>
+    <div id="down-btn" class="mobile-control">↓</div>
+  </div>
+  <div id="fire-btn" class="mobile-control"></div>
+  <div id="enter-btn" class="mobile-control">ENTER</div>
+  
+  <script>
+  // اضافه کردن این کد به اسکریپت بازی
+  
+  // تشخیص موبایل
+  const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  
+  if (isMobile) {
+    // تنظیم کنترل‌های لمسی
+    const upBtn = document.getElementById('up-btn');
+    const downBtn = document.getElementById('down-btn');
+    const fireBtn = document.getElementById('fire-btn');
+    const enterBtn = document.getElementById('enter-btn');
+    
+    // حرکت بالا
+    const startMoveUp = (e) => {
+      if (e) e.preventDefault();
+      gameState.keys['w'] = true;
+    };
+    
+    const stopMoveUp = (e) => {
+      if (e) e.preventDefault();
+      gameState.keys['w'] = false;
+    };
+    
+    // حرکت پایین
+    const startMoveDown = (e) => {
+      if (e) e.preventDefault();
+      gameState.keys['s'] = true;
+    };
+    
+    const stopMoveDown = (e) => {
+      if (e) e.preventDefault();
+      gameState.keys['s'] = false;
+    };
+    
+    // تیراندازی
+    const fire = (e) => {
+      if (e) e.preventDefault();
+      const now = Date.now();
+      if (now - gameState.player.lastShot > gameState.player.shotDelay) {
+        shootPlayer();
+        gameState.player.lastShot = now;
+      }
+    };
+    
+    // شروع مجدد
+    const enter = (e) => {
+      if (e) e.preventDefault();
+      if (gameState.gameOver) {
+        restartGame();
+      }
+    };
+    
+    // رویدادهای لمسی
+    upBtn.addEventListener('touchstart', startMoveUp);
+    upBtn.addEventListener('touchend', stopMoveUp);
+    downBtn.addEventListener('touchstart', startMoveDown);
+    downBtn.addEventListener('touchend', stopMoveDown);
+    fireBtn.addEventListener('touchstart', fire);
+    enterBtn.addEventListener('touchstart', enter);
+    
+    // رویدادهای کلیک برای تست در دسکتاپ
+    upBtn.addEventListener('mousedown', startMoveUp);
+    upBtn.addEventListener('mouseup', stopMoveUp);
+    downBtn.addEventListener('mousedown', startMoveDown);
+    downBtn.addEventListener('mouseup', stopMoveDown);
+    fireBtn.addEventListener('click', fire);
+    enterBtn.addEventListener('click', enter);
+    
+    // تنظیمات مخصوص موبایل
+    function resizeForMobile() {
+      const controlsHeight = 120;
+      const windowHeight = window.innerHeight;
+      
+      canvas.width = Math.min(window.innerWidth, 800);
+      canvas.height = windowHeight - controlsHeight;
+      
+      // تغییر اندازه متناسب
+      const scaleFactor = Math.min(window.innerWidth / 800, (windowHeight - controlsHeight) / 600);
+      const fontSize = Math.max(16, 16 * scaleFactor);
+      
+      document.getElementById('gameInfo').style.fontSize = `${fontSize}px`;
+    }
+    
+    resizeForMobile();
+    window.addEventListener('resize', resizeForMobile);
+  }
+  </script>
+  <style>
+    /* مخفی کردن پیش‌فرض */
+    #direction-btns, #fire-btn, #enter-btn {
+      display: none;
+    }
+  
+    /* نمایش فقط در موبایل */
+    @media (max-width: 768px), (hover: none) and (pointer: coarse) {
+      #direction-btns {
+        display: flex;
+        position: fixed;
+        left: 560px;
+        bottom: 200px;
+        flex-direction: column;
+        gap: 30px;
+        z-index: 1000;
+      }
+      
+      #fire-btn {
+        display: flex;
+        position: fixed;
+        right: -400px;
+        bottom: 130px;
+        width: 100px;
+        height: 100px;
+      }
+      
+      #enter-btn {
+        display: flex;
+        position: fixed;
+        bottom: 20px;
+        left: 100%;
+        transform: translateX(-50%);
+      }
+    }
+  </style>
+<!-- این کد را قبل از تگ <script> پایانی اضافه کنید -->
+    <style>
+        /* استایل‌های منوی جدید */
+        #mainMenu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+        }
+        
+        #startBtn {
+            background: linear-gradient(135deg, #4CAF50, #2E7D32);
+            color: white;
+            border: none;
+            padding: 20px 60px;
+            font-size: 28px;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            transition: all 0.3s;
+            margin: 10px;
+        }
+        
+        #startBtn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        }
+        
+        #difficultyMenu {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            flex-direction: column;
+        }
+        
+        .difficultyBtn {
+            background: linear-gradient(135deg, #2196F3, #0D47A1);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 20px;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            transition: all 0.3s;
+            margin: 10px;
+            width: 200px;
+        }
+        
+        .difficultyBtn:hover {
+            transform: scale(1.05);
+        }
+        
+        #easyBtn { background: linear-gradient(135deg, #4CAF50, #2E7D32); }
+        #mediumBtn { background: linear-gradient(135deg, #FFA500, #FF8C00); }
+        #hardBtn { background: linear-gradient(135deg, #FF4500, #FF0000); }
+        #backBtn { background: linear-gradient(135deg, #9E9E9E, #616161); }
+        
+        #gameTitle {
+            color: white;
+            font-size: 48px;
+            margin-bottom: 50px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+        
+        #difficultyTitle {
+            color: white;
+            font-size: 36px;
+            margin-bottom: 30px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+    </style>
+    
+    <!-- منوی اصلی -->
+    <div id="mainMenu">
+        <h1 id="gameTitle">نبرد نهایی</h1>
+        <button id="startBtn">شروع بازی</button>
+    </div>
+    
+    <!-- منوی سطح سختی -->
+    <div id="difficultyMenu">
+        <h1 id="difficultyTitle">سطح سختی را انتخاب کنید</h1>
+        <button id="easyBtn" class="difficultyBtn">آسان</button>
+        <button id="mediumBtn" class="difficultyBtn">متوسط</button>
+        <button id="hardBtn" class="difficultyBtn">سخت</button>
+        <button id="backBtn" class="difficultyBtn">بازگشت</button>
+    </div>
+    
+    <script>
+    // مخفی کردن عناصر بازی در ابتدا
+    document.getElementById('gameCanvas').style.display = 'none';
+    document.getElementById('gameInfo').style.display = 'none';
+    document.getElementById('gameOver').style.display = 'none';
+    
+    // تعریف سطح سختی
+    const difficultySettings = {
+        easy: { damage: 10, speed: 4, health: 90, shotDelay: 1500 },
+        medium: { damage: 20, speed: 5, health: 100, shotDelay: 1200 },
+        hard: { damage: 35, speed: 6, health: 110, shotDelay: 700 }
+    };
+    
+    let currentDifficulty = 'medium';
+    
+    // رویدادهای منو
+    document.getElementById('startBtn').addEventListener('click', function() {
+        document.getElementById('mainMenu').style.display = 'none';
+        document.getElementById('difficultyMenu').style.display = 'flex';
+    });
+    
+    document.getElementById('backBtn').addEventListener('click', function() {
+        document.getElementById('difficultyMenu').style.display = 'none';
+        document.getElementById('mainMenu').style.display = 'flex';
+    });
+    
+    // شروع بازی با سطح سختی انتخاب شده
+    function startGame(difficulty) {
+        currentDifficulty = difficulty;
+        const settings = difficultySettings[difficulty];
+        
+        // اعمال تنظیمات
+        gameState.enemy.speed = settings.speed;
+        gameState.enemy.health = settings.health;
+        gameState.enemy.shotDelay = settings.shotDelay;
+        
+        // مخفی کردن منو
+        document.getElementById('difficultyMenu').style.display = 'none';
+        
+        // نمایش عناصر بازی
+        document.getElementById('gameCanvas').style.display = 'block';
+        document.getElementById('gameInfo').style.display = 'block';
+        
+        // ریست بازی
+        restartGame();
+    }
+    
+    // رویدادهای دکمه‌های سطح سختی
+    document.getElementById('easyBtn').addEventListener('click', function() {
+        startGame('easy');
+    });
+    
+    document.getElementById('mediumBtn').addEventListener('click', function() {
+        startGame('medium');
+    });
+    
+    document.getElementById('hardBtn').addEventListener('click', function() {
+        startGame('hard');
+    });
+    
+    // تغییر در تابع checkCollisions برای اعمال آسیب متناسب
+    const originalCheckCollisions = checkCollisions;
+    checkCollisions = function() {
+        // تیرهای بازیکن به دشمن
+        for (let i = gameState.player.bullets.length - 1; i >= 0; i--) {
+            const bullet = gameState.player.bullets[i];
+            if (isColliding(bullet, gameState.enemy)) {
+                gameState.enemy.health -= 12;
+                gameState.player.bullets.splice(i, 1);
+                createHitEffect(bullet.x, bullet.y, '#00ff00');
+                
+                if (gameState.enemy.health <= 0) {
+                    endGame(false); // پایان بازی با برد بازیکن
+                    return;
+                }
+            }
+        }
+    
+        // تیرهای دشمن به بازیکن
+        for (let i = gameState.enemy.bullets.length - 1; i >= 0; i--) {
+            const bullet = gameState.enemy.bullets[i];
+            if (isColliding(bullet, gameState.player)) {
+                gameState.player.health -= difficultySettings[currentDifficulty].damage;
+                gameState.enemy.bullets.splice(i, 1);
+                createHitEffect(bullet.x, bullet.y, '#ff0000');
+                
+                if (gameState.player.health <= 0) {
+                    endGame(true); // پایان بازی با باخت بازیکن
+                    return;
+                }
+            }
+        }
+    };
+    
+    // تغییر در تابع endGame برای نمایش نتیجه
+    const originalEndGame = endGame;
+    endGame = function(playerLost) {
+        originalEndGame();
+        
+        if (playerLost) {
+            resultTextEl.textContent = 'آقای ایزدفر برنده شد!';
+        } else {
+            resultTextEl.textContent = 'آفرین! شما برنده شدید';
+        }
+        
+        // نمایش صفحه پایان بازی
+        gameOverEl.style.display = 'block';
+    };
+    </script>
+    <!-- این کد را در بخش style اضافه کنید -->
+<style>
+    /* استایل بخش انتخاب اسکین */
+    #skinMenu {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.9);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 1001;
+        flex-direction: column;
+    }
+    
+    .skin-option {
+        width: 150px;
+        height: 150px;
+        margin: 15px;
+        border: 3px solid transparent;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.3s;
+        background-size: cover;
+        background-position: center;
+    }
+    
+    .skin-option:hover {
+        transform: scale(1.1);
+        border-color: #4CAF50;
+    }
+    
+    .skin-option.selected {
+        border-color: #FFD700;
+        box-shadow: 0 0 20px #FFD700;
+    }
+    
+    #skinTitle {
+        color: white;
+        font-size: 36px;
+        margin-bottom: 30px;
+        text-shadow: 0 0 10px rgba(255,255,255,0.5);
+    }
+    
+    #skinContainer {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: 800px;
+    }
+    
+    #skinBackBtn {
+        background: linear-gradient(135deg, #9E9E9E, #616161);
+        color: white;
+        border: none;
+        padding: 12px 30px;
+        font-size: 18px;
+        border-radius: 50px;
+        cursor: pointer;
+        margin-top: 30px;
+    }
+</style>
+
+<!-- این کد را قبل از بسته شدن تگ body اضافه کنید -->
+<div id="skinMenu">
+    <h1 id="skinTitle">انتخاب اسکین شخصیت</h1>
+    <div id="skinContainer">
+        <div class="skin-option selected" data-skin="default" style="background-image: url('https://www.dropbox.com/scl/fi/81uhhp16tvav7lroqysim/player.png?rlkey=5sfcisnzwjjyoc3jbqevt9w21&st=8ggqqfaw&dl=1')"></div>
+        <div class="skin-option" data-skin="warrior" style="background-image: url('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTbDt-3UhfO1dYz_MusRNIGXA2jDnPiGLNhqQ&s')"></div>
+        <div class="skin-option" data-skin="ninja" style="background-image: url('https://previews.dropbox.com/p/thumb/AClmmLUhG0Wcp-7Yh4TXzxgMBTXKG62jD_u_DNn54sRClUluZi9Nr51iW6JsIM1YLQuD3EvfN0ux5FohrGBtFqTG2m9TdfEKJGPTiX06Urt-PZHZN9VolLRAwbOSIgRxRN4Rk9SIFBa1N13uQjVjcdyZS3aehtN4Qss1bc04OR_cm5jW4ngpiHmzJh32SC2NNXSAAYE7DOynPKJaG8qWHv1ESZ9x2AbQsHWINzLHRB2JzkqgrOZfNQs1QhghsNlYVZZ6phXFlgHxWJI2RUSue6l2eo8ja06s7DCOswwYDN4GjjEeaa3pZjHQM6JaKi1O2dosQbuk2g8zpmw6C9zOK743/p.jpeg?is_prewarmed=true')"></div>
+        <div class="skin-option" data-skin="robot" style="background-image: url('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQZLJznqIQJJiIQH2jxXS4DGWBDjN6B1SkJDg&s')"></div>
+    </div>
+    <button id="skinBackBtn">بازگشت</button>
+</div>
+
+<!-- این کد را در بخش اسکریپت اضافه کنید -->
+<script>
+// متغیرهای اسکین
+let currentSkin = 'default';
+const skinOptions = {
+    default: {
+        player: 'https://www.dropbox.com/scl/fi/81uhhp16tvav7lroqysim/player.png?rlkey=5sfcisnzwjjyoc3jbqevt9w21&st=8ggqqfaw&dl=1',
+        bullet: 'https://www.dropbox.com/scl/fi/xpjdral0g4vrgcp8875yh/imeages.png?rlkey=2mciz8v8tmk6crqohk2hidma3&st=5ws5212g&dl=1'
+    },
+    warrior: {
+        player: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTbDt-3UhfO1dYz_MusRNIGXA2jDnPiGLNhqQ&s',
+        bullet: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTWH9GW4MIL4Y4dPEETep7ksnMRQ0UrbuQ0hQ&s'
+    },
+    ninja: {
+        player: 'https://previews.dropbox.com/p/thumb/AClmmLUhG0Wcp-7Yh4TXzxgMBTXKG62jD_u_DNn54sRClUluZi9Nr51iW6JsIM1YLQuD3EvfN0ux5FohrGBtFqTG2m9TdfEKJGPTiX06Urt-PZHZN9VolLRAwbOSIgRxRN4Rk9SIFBa1N13uQjVjcdyZS3aehtN4Qss1bc04OR_cm5jW4ngpiHmzJh32SC2NNXSAAYE7DOynPKJaG8qWHv1ESZ9x2AbQsHWINzLHRB2JzkqgrOZfNQs1QhghsNlYVZZ6phXFlgHxWJI2RUSue6l2eo8ja06s7DCOswwYDN4GjjEeaa3pZjHQM6JaKi1O2dosQbuk2g8zpmw6C9zOK743/p.jpeg?is_prewarmed=true',
+        bullet: 'https://previews.dropbox.com/p/thumb/AClVwau1Vt77IsqsHnma1_dDEAycqYTri2hFT1zK5W-6ygi5Le1kmKU1Z9IJ3KQ7QuYTqUgTd8p2193BUN8jIzG-9QtZiR1oGqROCaRfOYwZXkMrzxdpW_B_iXD3MVFlihy2-q-AIlrlvIkH7wwuuvaOE7gHKUkCPadebFl9LGv3cPXfSfGD_gYd57aBGJiub8rst3S7aDHHRiuILQcKASaQjynfCg9vikzlcsQknm_ACpm7x-BTWuhlmFYKTMf7HptyjWUZYyUlAfqHDo_-b4r0j_U-_J06lGBFGXT9Nu8-k158-jCOGee-SUjJC3puUFo/p.png'
+    },
+    robot: {
+        player: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQZLJznqIQJJiIQH2jxXS4DGWBDjN6B1SkJDg&s',
+        bullet: 'https://www.dropbox.com/scl/fi/xpjdral0g4vrgcp8875yh/imeages.png?rlkey=2mciz8v8tmk6crqohk2hidma3&st=5ws5212g&dl=1'
+    }
+};
+
+// رویدادهای منوی اسکین
+document.getElementById('startBtn').addEventListener('click', function() {
+    document.getElementById('mainMenu').style.display = 'none';
+    document.getElementById('skinMenu').style.display = 'flex';
+});
+
+document.getElementById('skinBackBtn').addEventListener('click', function() {
+    document.getElementById('skinMenu').style.display = 'none';
+    document.getElementById('mainMenu').style.display = 'flex';
+});
+
+// انتخاب اسکین
+document.querySelectorAll('.skin-option').forEach(option => {
+    option.addEventListener('click', function() {
+        // حذف انتخاب از همه گزینه‌ها
+        document.querySelectorAll('.skin-option').forEach(opt => {
+            opt.classList.remove('selected');
+        });
+        
+        // اضافه کردن انتخاب به گزینه فعلی
+        this.classList.add('selected');
+        currentSkin = this.getAttribute('data-skin');
+        
+        // تغییر تصاویر بازی
+        images.player.src = skinOptions[currentSkin].player;
+        images.playerBullet.src = skinOptions[currentSkin].bullet;
+        
+        // نمایش منوی سطح سختی پس از انتخاب اسکین
+        setTimeout(() => {
+            document.getElementById('skinMenu').style.display = 'none';
+            document.getElementById('difficultyMenu').style.display = 'flex';
+        }, 500);
+    });
+});
+
+// تغییر در تابع startGame برای اعمال اسکین انتخاب شده
+const originalStartGame = startGame;
+startGame = function(difficulty) {
+    originalStartGame(difficulty);
+    
+    // اعمال اسکین انتخاب شده
+    images.player.src = skinOptions[currentSkin].player;
+    images.playerBullet.src = skinOptions[currentSkin].bullet;
+};
+</script>
+<script>
+    // تغییر در تابع endGame برای نمایش نتیجه صحیح
+    endGame = function() {
+        gameState.gameOver = true;
+        createConfetti();
+        
+        if (gameState.player.health <= 0) {
+            resultTextEl.textContent = 'آقای ایزدفر شما را نابود کرد! دوباره تلاش کنید';
+        } else {
+            resultTextEl.textContent = 'آفرین! شما آقای ایزدفر را شکست دادید';
+        }
+        
+        gameOverEl.style.display = 'block';
+    };
+    
+    // تغییر در تابع checkCollisions برای پایان صحیح بازی
+    checkCollisions = function() {
+        // تیرهای بازیکن به دشمن
+        gameState.player.bullets.forEach((bullet, index) => {
+            if (isColliding(bullet, gameState.enemy)) {
+                gameState.enemy.health -= 12;
+                gameState.player.bullets.splice(index, 1);
+                createHitEffect(bullet.x, bullet.y, '#00ff00');
+                
+                // بررسی پایان بازی اگر سلامت دشمن تمام شد
+                if (gameState.enemy.health <= 0) {
+                    endGame();
+                    return;
+                }
+            }
+        });
+    
+        // تیرهای دشمن به بازیکن
+        gameState.enemy.bullets.forEach((bullet, index) => {
+            if (isColliding(bullet, gameState.player)) {
+                gameState.player.health -= difficultySettings[currentDifficulty].damage;
+                gameState.enemy.bullets.splice(index, 1);
+                createHitEffect(bullet.x, bullet.y, '#ff0000');
+                
+                // بررسی پایان بازی اگر سلامت بازیکن تمام شد
+                if (gameState.player.health <= 0) {
+                    endGame();
+                    return;
+                }
+            }
+        });
+    };
+    </script>
+    <style>
+        /* استایل صفحه اسپلش با تضمین نمایش تصویر */
+        #splashScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #splashImage {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            opacity: 1;
+            transition: opacity 1.5s ease-out;
+        }
+    </style>
+    
+    <div id="splashScreen">
+        <img id="splashImage" src="https://www.dropbox.com/scl/fi/jg2qkhaf886mh4ijb4gbh/170105c9-c66a-4ba1-83c7-cf58fa887b31.png?rlkey=ekig4rkarsuor3h4es0lukrdp&st=cnrhnv48&dl=1" alt="لوگوی بازی">
+    </div>
+    
+    <script>
+        // ابتدا مطمئن میشویم تصویر لود شده است
+        document.getElementById('splashImage').onload = function() {
+            // پس از 3 ثانیه تصویر را محو میکنیم
+            setTimeout(() => {
+                document.getElementById('splashImage').style.opacity = '0';
+                
+                // پس از اتمام انیمیشن محو شدن
+                setTimeout(() => {
+                    document.getElementById('splashScreen').style.display = 'none';
+                    document.getElementById('mainMenu').style.display = 'flex';
+                }, 1500);
+            }, 3000);
+        };
+        
+        // اگر تصویر لود نشد
+        document.getElementById('splashImage').onerror = function() {
+            document.getElementById('splashScreen').style.display = 'none';
+            document.getElementById('mainMenu').style.display = 'flex';
+        };
+    </script>
+
+        <script>
+            // ======== اضافه کردن گزینه Coming Soon به منوی سختی ========
+                
+                // 3. استایل‌دهی به گزینه
+                comingSoonBtn.style.background = 'linear-gradient(135deg, #333333, #666666)';
+                comingSoonBtn.style.cursor = 'not-allowed';
+                comingSoonBtn.style.opacity = '0.7';
+                comingSoonBtn.style.position = 'relative';
+                comingSoonBtn.style.overflow = 'hidden';
+                
+                // 4. اضافه کردن افکت درخشش
+                const shineEffect = document.createElement('div');
+                shineEffect.style.position = 'absolute';
+                shineEffect.style.top = '-50%';
+                shineEffect.style.left = '-50%';
+                shineEffect.style.width = '200%';
+                shineEffect.style.height = '200%';
+                shineEffect.style.background = 'linear-gradient(to bottom right, rgba(255,255,255,0) 45%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0) 55%)';
+                shineEffect.style.animation = 'shine 3s infinite';
+                shineEffect.style.transform = 'rotate(30deg)';
+                
+                comingSoonBtn.appendChild(shineEffect);
+                
+                // 5. اضافه کردن به منو (بعد از دکمه سخت)
+                const hardBtn = document.getElementById('hardBtn');
+                if (hardBtn) {
+                    difficultyMenu.insertBefore(comingSoonBtn, hardBtn.nextSibling);
+                } else {
+                    difficultyMenu.appendChild(comingSoonBtn);
+                }
+                
+                // 6. غیرفعال کردن کلیک
+                comingSoonBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    alert('سطح شیطانی در آپدیت 1.5 اضافه خواهد شد!\n\nفعلاً می‌توانید از سطح سخت لذت ببرید.');
+                    return false;
+                });
+            }
+            
+            // 7. اضافه کردن استایل‌های لازم
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes shine {
+                    0% { transform: translateX(-100%) rotate(30deg); }
+                    100% { transform: translateX(100%) rotate(30deg); }
+                }
+                
+                #comingSoonBtn:hover {
+                    transform: none !important;
+                    box-shadow: none !important;
+                }
+            `;
+            document.head.appendChild(style);
+            </script>
+            <script>
+                // ========== کد صداها با منابع جدید ==========
+                const gameSounds = {
+                  bgMusic: new Audio('https://sedatoseda.com/wp-content/uploads/stranger-things-124008.mp3'),
+                  gun: new Audio('https://sedatoseda.com/wp-content/uploads/Police-Sound-Gun1.mp3'),
+                  donkey: new Audio('https://sedatoseda.com/wp-content/uploads/donkey-sound1.mp3'),
+                  click: new Audio('https://www.soundjay.com/buttons/sounds/button-21.mp3'),
+                  sword: new Audio('https://biaupload.com/static/files-2025-04/org-08e7ff479e094.mp3'),
+                  laser: new Audio('')
+                };
+                
+                // تنظیمات صداها
+                let isSoundEnabled = true;
+                gameSounds.bgMusic.volume = 0.17;
+                gameSounds.gun.volume = 0.20;
+                gameSounds.donkey.volume = 0.40;
+                gameSounds.click.volume = 0.7;
+                gameSounds.sword.volume = 0.40;
+                gameSounds.laser.volume = 0.8;
+                gameSounds.bgMusic.loop = true;
+                
+                // تابع پخش صدا با مدیریت خطا
+                function playSound(soundName) {
+                  if (!isSoundEnabled) return;
+                  
+                  try {
+                    const sound = gameSounds[soundName];
+                    sound.currentTime = 0;
+                    sound.play().catch(e => {
+                      console.log('خطا در پخش صدا:', e);
+                      // تلاش مجدد با بارگذاری مجدد صدا
+                      sound.load();
+                      sound.play().catch(e => console.log('خطا در تلاش مجدد:', e));
+                    });
+                  } catch(e) {
+                    console.log('خطای عمومی در پخش صدا:', e);
+                  }
+                }
+                
+                // شروع موسیقی پس‌زمینه
+                window.addEventListener('DOMContentLoaded', () => {
+                  setTimeout(() => {
+                    playSound('bgMusic');
+                  }, 1000);
+                });
+                
+                // تغییر تابع shootPlayer
+                const originalShootPlayer = shootPlayer;
+                shootPlayer = function() {
+                  if (currentSkin === 'warrior') {
+                    playSound('donkey');
+                  } else if (currentSkin === 'ninja') {
+                    playSound('sword');
+                  } else if (currentSkin === 'robot') {
+                    playSound('laser');
+                  } else {
+                    playSound('gun');
+                  }
+                  originalShootPlayer();
+                };
+                
+                // ایجاد دکمه کنترل صدا
+                const soundBtn = document.createElement('button');
+                soundBtn.id = 'soundControl';
+                soundBtn.innerHTML = '🔊';
+                soundBtn.style.position = 'fixed';
+                soundBtn.style.top = '10px';
+                soundBtn.style.left = '10px';
+                soundBtn.style.zIndex = '1000';
+                soundBtn.style.background = 'rgba(0,0,0,0.7)';
+                soundBtn.style.color = 'white';
+                soundBtn.style.border = '2px solid white';
+                soundBtn.style.borderRadius = '50%';
+                soundBtn.style.width = '40px';
+                soundBtn.style.height = '40px';
+                soundBtn.style.fontSize = '20px';
+                soundBtn.style.cursor = 'pointer';
+                soundBtn.style.display = 'flex';
+                soundBtn.style.alignItems = 'center';
+                soundBtn.style.justifyContent = 'center';
+                
+                // مدیریت کلیک دکمه صدا
+                soundBtn.addEventListener('click', function() {
+                  isSoundEnabled = !isSoundEnabled;
+                  this.innerHTML = isSoundEnabled ? '🔊' : '🔇';
+                  this.style.color = isSoundEnabled ? 'white' : '#ff0000';
+                  
+                  if (isSoundEnabled) {
+                    playSound('bgMusic');
+                  } else {
+                    gameSounds.bgMusic.pause();
+                  }
+                  
+                  playSound('click');
+                });
+                
+                document.body.appendChild(soundBtn);
+                
+                // اضافه کردن صدا به کلیه دکمه‌ها
+                document.querySelectorAll('button').forEach(btn => {
+                  if (btn.id !== 'soundControl') {
+                    btn.addEventListener('click', () => playSound('click'));
+                    btn.addEventListener('mouseenter', () => {
+                      if (isSoundEnabled) gameSounds.click.currentTime = 0;
+                    });
+                  }
+                });
+                </script>
+                <script>
+                    // ========== کد اصلاحی برای صدای پس‌زمینه ==========
+                    const bgMusic = new Audio('https://sedatoseda.com/wp-content/uploads/stranger-things-124008.mp3');
+                    bgMusic.volume = 0.3;
+                    bgMusic.loop = true;
+                    
+                    let isSoundEnabled = true;
+                    
+                    // تابع شروع خودکار موسیقی پس‌زمینه
+                    function startBackgroundMusic() {
+                      // این تابع مشکل نیاز به کلیک اولیه را حل می‌کند
+                      bgMusic.play().catch(e => {
+                        console.log('برای پخش صدا نیاز به تعامل کاربر است');
+                        // اگر پخش نشد، بعد از اولین کلیک کاربر دوباره امتحان می‌کند
+                        document.addEventListener('click', function tryPlay() {
+                          bgMusic.play().then(() => {
+                            document.removeEventListener('click', tryPlay);
+                          }).catch(e => console.log('خطا در پخش صدا:', e));
+                        }, { once: true });
+                      });
+                    }
+                    
+                    // شروع موسیقی پس از بارگذاری صفحه
+                    window.addEventListener('DOMContentLoaded', () => {
+                      setTimeout(startBackgroundMusic, 1000);
+                    });
+                    
+                    // دکمه کنترل صدا
+                    const soundBtn = document.createElement('button');
+                    soundBtn.innerHTML = '🔊';
+                    soundBtn.style.position = 'fixed';
+                    soundBtn.style.top = '10px';
+                    soundBtn.style.left = '10px';
+                    soundBtn.style.zIndex = '1000';
+                    soundBtn.style.background = 'rgba(0,0,0,0.7)';
+                    soundBtn.style.border = 'none';
+                    soundBtn.style.borderRadius = '50%';
+                    soundBtn.style.width = '40px';
+                    soundBtn.style.height = '40px';
+                    soundBtn.style.fontSize = '20px';
+                    soundBtn.style.cursor = 'pointer';
+                    
+                    soundBtn.addEventListener('click', function() {
+                      isSoundEnabled = !isSoundEnabled;
+                      this.innerHTML = isSoundEnabled ? '🔊' : '🔇';
+                      isSoundEnabled ? bgMusic.play() : bgMusic.pause();
+                    });
+                    
+                    document.body.appendChild(soundBtn);
+                    </script>
+<script>
+    // ========== کد اصلاحی برای شروع صحیح بازی ==========
+    
+    // متغیرهای حالت بازی
+    let gameInitialized = false;
+    let gameStarted = false;
+    
+    // تغییر تابع شروع بازی
+    function startGameAfterSelections() {
+      // فقط اگر بازی هنوز شروع نشده
+      if (!gameStarted) {
+        gameInitialized = true;
+        gameStarted = true;
+        
+        // مخفی کردن منوها
+        document.getElementById('skinMenu').style.display = 'none';
+        document.getElementById('difficultyMenu').style.display = 'none';
+        
+        // نمایش عناصر بازی
+        document.getElementById('gameCanvas').style.display = 'block';
+        document.getElementById('gameInfo').style.display = 'block';
+        
+        // ریست وضعیت بازی
+        resetGameState();
+        
+        // شروع موسیقی
+        playSound('bgMusic');
+      }
+    }
+    
+    // تغییر تابع resetGameState
+    function resetGameState() {
+      gameState.player = {
+        ...gameState.player,
+        health: 100,
+        bullets: [],
+        lastShot: 0
+      };
+      
+      gameState.enemy = {
+        ...gameState.enemy,
+        health: 100,
+        bullets: [],
+        lastShot: 0
+      };
+      
+      gameState.gameOver = false;
+      gameState.confetti = [];
+      
+      // به روزرسانی نمایش سلامت
+      document.getElementById('playerHealth').textContent = '100';
+      document.getElementById('enemyHealth').textContent = '100';
+      
+      // مخفی کردن صفحه پایان بازی
+      document.getElementById('gameOver').style.display = 'none';
+    }
+    
+    // تغییر در تابع endGame برای جلوگیری از نمایش نادرست
+    const originalEndGame = endGame;
+    endGame = function() {
+      if (gameStarted) {
+        originalEndGame();
+      }
+    };
+    
+    // تغییر در تابع checkCollisions
+    const originalCheckCollisions = checkCollisions;
+    checkCollisions = function() {
+      if (gameStarted) {
+        originalCheckCollisions();
+      }
+    };
+    
+    // تغییر در رویدادهای کلیک برای دکمه‌های انتخاب
+    document.getElementById('easyBtn').addEventListener('click', function() {
+      currentDifficulty = 'easy';
+      startGameAfterSelections();
+    });
+    
+    document.getElementById('mediumBtn').addEventListener('click', function() {
+      currentDifficulty = 'medium';
+      startGameAfterSelections();
+    });
+    
+    document.getElementById('hardBtn').addEventListener('click', function() {
+      currentDifficulty = 'hard';
+      startGameAfterSelections();
+    });
+    </script>
+    <script>
+        // ========== کد مدیریت لودینگ تصاویر ==========
+        
+        // تابع نمایش صفحه لودینگ
+        function showLoadingScreen() {
+          const loadingScreen = document.createElement('div');
+          loadingScreen.id = 'loadingScreen';
+          loadingScreen.style.position = 'fixed';
+          loadingScreen.style.top = '0';
+          loadingScreen.style.left = '0';
+          loadingScreen.style.width = '100%';
+          loadingScreen.style.height = '100%';
+          loadingScreen.style.backgroundColor = '#000';
+          loadingScreen.style.display = 'flex';
+          loadingScreen.style.flexDirection = 'column';
+          loadingScreen.style.alignItems = 'center';
+          loadingScreen.style.justifyContent = 'center';
+          loadingScreen.style.zIndex = '9999';
+          
+          const loadingText = document.createElement('div');
+          loadingText.textContent = 'در حال لود کردن بازی...';
+          loadingText.style.color = '#fff';
+          loadingText.style.fontSize = '24px';
+          loadingText.style.marginTop = '20px';
+          
+          const spinner = document.createElement('div');
+          spinner.style.border = '5px solid #333';
+          spinner.style.borderTop = '5px solid #f00';
+          spinner.style.borderRadius = '50%';
+          spinner.style.width = '50px';
+          spinner.style.height = '50px';
+          spinner.style.animation = 'spin 1s linear infinite';
+          
+          const style = document.createElement('style');
+          style.textContent = `
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `;
+          
+          loadingScreen.appendChild(spinner);
+          loadingScreen.appendChild(loadingText);
+          document.body.appendChild(loadingScreen);
+          document.head.appendChild(style);
+        }
+        
+        // تابع مخفی کردن صفحه لودینگ
+        function hideLoadingScreen() {
+          const loadingScreen = document.getElementById('loadingScreen');
+          if (loadingScreen) {
+            loadingScreen.style.opacity = '0';
+            setTimeout(() => {
+              loadingScreen.remove();
+            }, 500);
+          }
+        }
+        
+        // تابع لود تصاویر
+        function loadGameAssets() {
+          return new Promise((resolve) => {
+            const imagesToLoad = [
+              'https://www.dropbox.com/scl/fi/81uhhp16tvav7lroqysim/player.png?rlkey=5sfcisnzwjjyoc3jbqevt9w21&st=8ggqqfaw&dl=1',
+              'https://www.dropbox.com/scl/fi/aq7jej7lx4ivvyyn0xud0/enemy.png?rlkey=ey8qbl1lm9237aqh613fse8mw&st=6o8zsquo&dl=1',
+              'https://www.dropbox.com/scl/fi/45t9r6y2necad8bm8rh0b/_.jpg?rlkey=7h0jova0u0ofz48z73vxnlp0q&st=iruso0io&dl=0',
+              'https://www.dropbox.com/scl/fi/xpjdral0g4vrgcp8875yh/imeages.png?rlkey=2mciz8v8tmk6crqohk2hidma3&st=5ws5212g&dl=1',
+              'https://www.dropbox.com/scl/fi/l8sqidp2u3f0r0ieq7kt4/images.png?rlkey=vk07u8tpfpvt26zf353qysrli&st=umarb41p&dl=1',
+              'https://www.dropbox.com/scl/fi/6t3mkk5bn1ykabz1s1auv/1-scaled.png?rlkey=maogyrnlme05uxljgcmffc90o&st=da06idla&dl=0',
+              'https://postimg.cc/34K3BGxL'
+            ];
+            
+            let loadedCount = 0;
+            const totalImages = imagesToLoad.length;
+            
+            imagesToLoad.forEach(src => {
+              const img = new Image();
+              img.onload = () => {
+                loadedCount++;
+                if (loadedCount === totalImages) {
+                  resolve();
+                }
+              };
+              img.onerror = () => {
+                loadedCount++;
+                if (loadedCount === totalImages) {
+                  resolve();
+                }
+              };
+              img.src = src;
+            });
+          });
+        }
+        
+        // اجرای فرآیند لودینگ
+        window.addEventListener('DOMContentLoaded', () => {
+          showLoadingScreen();
+          
+          loadGameAssets().then(() => {
+            setTimeout(() => {
+              hideLoadingScreen();
+              
+              // شروع بازی پس از لود کامل
+              document.getElementById('mainMenu').style.display = 'flex';
+            }, 1000);
+          });
+        });
+        </script>
+        <script>
+            // ========== کد اصلاحی برای مدیریت شروع بازی ==========
+            
+            // متغیرهای حالت بازی
+            let gameReady = false;
+            let gameActive = false;
+            
+            // تغییر تابع شروع بازی
+            function startGame() {
+              if (!gameReady) return;
+              
+              gameActive = true;
+              
+              // مخفی کردن منوها
+              document.getElementById('mainMenu').style.display = 'none';
+              document.getElementById('skinMenu').style.display = 'none';
+              document.getElementById('difficultyMenu').style.display = 'none';
+              
+              // نمایش عناصر بازی
+              document.getElementById('gameCanvas').style.display = 'block';
+              document.getElementById('gameInfo').style.display = 'block';
+              
+              // ریست کامل وضعیت بازی
+              resetGameState();
+              
+              // شروع موسیقی
+              playSound('bgMusic');
+            }
+            
+            // تابع ریست وضعیت بازی
+            function resetGameState() {
+              gameState.player.health = 100;
+              gameState.enemy.health = 100;
+              gameState.player.bullets = [];
+              gameState.enemy.bullets = [];
+              gameState.gameOver = false;
+              gameState.confetti = [];
+              
+              // به روزرسانی نمایش سلامت
+              document.getElementById('playerHealth').textContent = '100';
+              document.getElementById('enemyHealth').textContent = '100';
+              
+              // مخفی کردن صفحه پایان بازی
+              document.getElementById('gameOver').style.display = 'none';
+            }
+            
+            // تغییر در تابع endGame
+            const originalEndGame = endGame;
+            endGame = function() {
+              if (gameActive) {
+                originalEndGame();
+              }
+            };
+            
+            // تغییر در تابع checkCollisions
+            const originalCheckCollisions = checkCollisions;
+            checkCollisions = function() {
+              if (gameActive) {
+                originalCheckCollisions();
+              }
+            };
+            
+            // تغییر در تابع update
+            const originalUpdate = update;
+            update = function(timestamp) {
+              if (gameActive) {
+                originalUpdate(timestamp);
+              }
+            };
+            
+            // تغییر در رویدادهای کلیک برای دکمه‌های انتخاب
+            document.getElementById('easyBtn').addEventListener('click', function() {
+              currentDifficulty = 'easy';
+              gameReady = true;
+              startGame();
+            });
+            
+            document.getElementById('mediumBtn').addEventListener('click', function() {
+              currentDifficulty = 'medium';
+              gameReady = true;
+              startGame();
+            });
+            
+            document.getElementById('hardBtn').addEventListener('click', function() {
+              currentDifficulty = 'hard';
+              gameReady = true;
+              startGame();
+            });
+            
+            // غیرفعال کردن بازی در ابتدا
+            gameActive = false;
+            gameReady = false;
+            </script>
+            <script>
+                // ========== کد اصلاحی نهایی برای مدیریت حالت بازی ==========
+                
+                // 1. متغیرهای کنترل حالت بازی
+                let gameInitialized = false;
+                let gameRunning = false;
+                let inMenu = true;
+                
+                // 2. تغییر تابع شروع بازی
+                function startGameAfterSelection() {
+                  // فقط اگر در منو هستیم و بازی شروع نشده
+                  if (inMenu && !gameRunning) {
+                    gameInitialized = true;
+                    gameRunning = true;
+                    inMenu = false;
+                    
+                    // مخفی کردن تمام منوها
+                    document.querySelectorAll('.menu-screen').forEach(menu => {
+                      menu.style.display = 'none';
+                    });
+                    
+                    // نمایش عناصر بازی
+                    document.getElementById('gameCanvas').style.display = 'block';
+                    document.getElementById('gameInfo').style.display = 'block';
+                    
+                    // ریست کامل وضعیت بازی
+                    resetGameState();
+                    
+                    console.log('بازی با موفقیت شروع شد');
+                  }
+                }
+                
+                // 3. تابع ریست کامل بازی
+                function resetGameState() {
+                  // ریست وضعیت بازیکن
+                  gameState.player.health = 100;
+                  gameState.player.bullets = [];
+                  gameState.player.lastShot = 0;
+                  
+                  // ریست وضعیت دشمن
+                  gameState.enemy.health = 100;
+                  gameState.enemy.bullets = [];
+                  gameState.enemy.lastShot = 0;
+                  
+                  // ریست سایر وضعیت‌ها
+                  gameState.gameOver = false;
+                  gameState.confetti = [];
+                  
+                  // به روزرسانی نمایش سلامت
+                  document.getElementById('playerHealth').textContent = '100';
+                  document.getElementById('enemyHealth').textContent = '100';
+                  
+                  // مخفی کردن صفحه پایان بازی
+                  document.getElementById('gameOver').style.display = 'none';
+                }
+                
+                // 4. تغییر تابع endGame برای جلوگیری از نمایش نادرست
+                const originalEndGame = endGame;
+                endGame = function() {
+                  if (gameRunning) {
+                    originalEndGame();
+                  }
+                };
+                
+                // 5. تغییر تابع update برای غیرفعال کردن بازی در منوها
+                const originalUpdate = update;
+                update = function(timestamp) {
+                  if (gameRunning) {
+                    originalUpdate(timestamp);
+                  }
+                };
+                
+                // 6. تغییر تابع checkCollisions
+                const originalCheckCollisions = checkCollisions;
+                checkCollisions = function() {
+                  if (gameRunning) {
+                    originalCheckCollisions();
+                  }
+                };
+                
+                // 7. تغییر در رویدادهای انتخاب سطح دشواری
+                document.getElementById('easyBtn').addEventListener('click', function() {
+                  currentDifficulty = 'easy';
+                  startGameAfterSelection();
+                });
+                
+                document.getElementById('mediumBtn').addEventListener('click', function() {
+                  currentDifficulty = 'medium';
+                  startGameAfterSelection();
+                });
+                
+                document.getElementById('hardBtn').addEventListener('click', function() {
+                  currentDifficulty = 'hard';
+                  startGameAfterSelection();
+                });
+                
+                // 8. مقداردهی اولیه
+                window.addEventListener('DOMContentLoaded', function() {
+                  // غیرفعال کردن بازی در ابتدا
+                  gameInitialized = false;
+                  gameRunning = false;
+                  inMenu = true;
+                  
+                  // مخفی کردن عناصر بازی
+                  document.getElementById('gameCanvas').style.display = 'none';
+                  document.getElementById('gameInfo').style.display = 'none';
+                  document.getElementById('gameOver').style.display = 'none';
+                  
+                  console.log('بازی آماده است - منتظر انتخاب کاربر');
+                });
+                </script>
+                <script>
+                    // ========== کد مدیریت حالت بازی ==========
+                    
+                    // متغیرهای کنترل حالت بازی
+                    let gameReady = false; // آیا بازی آماده شروع است؟
+                    let gameActive = false; // آیا بازی در حال اجراست؟
+                    
+                    // تغییر تابع شروع بازی
+                    function startGame(difficulty) {
+                        // فقط اگر بازی آماده است و هنوز شروع نشده
+                        if (!gameActive) {
+                            currentDifficulty = difficulty;
+                            const settings = difficultySettings[difficulty];
+                            
+                            // اعمال تنظیمات سطح دشواری
+                            gameState.enemy.speed = settings.speed;
+                            gameState.enemy.health = settings.health;
+                            gameState.enemy.shotDelay = settings.shotDelay;
+                            
+                            // مخفی کردن منوها
+                            document.getElementById('mainMenu').style.display = 'none';
+                            document.getElementById('skinMenu').style.display = 'none';
+                            document.getElementById('difficultyMenu').style.display = 'none';
+                            
+                            // نمایش عناصر بازی
+                            document.getElementById('gameCanvas').style.display = 'block';
+                            document.getElementById('gameInfo').style.display = 'block';
+                            
+                            // ریست کامل وضعیت بازی
+                            resetGameState();
+                            
+                            // فعال کردن بازی
+                            gameActive = true;
+                            gameReady = true;
+                            
+                            // شروع موسیقی
+                            playSound('bgMusic');
+                        }
+                    }
+                    
+                    // تابع ریست کامل بازی
+                    function resetGameState() {
+                        // ریست وضعیت بازیکن
+                        gameState.player.health = 100;
+                        gameState.player.bullets = [];
+                        gameState.player.lastShot = 0;
+                        
+                        // ریست وضعیت دشمن
+                        gameState.enemy.health = 100;
+                        gameState.enemy.bullets = [];
+                        gameState.enemy.lastShot = 0;
+                        
+                        // ریست سایر وضعیت‌ها
+                        gameState.gameOver = false;
+                        gameState.confetti = [];
+                        
+                        // به روزرسانی نمایش سلامت
+                        document.getElementById('playerHealth').textContent = '100';
+                        document.getElementById('enemyHealth').textContent = '100';
+                        
+                        // مخفی کردن صفحه پایان بازی
+                        document.getElementById('gameOver').style.display = 'none';
+                    }
+                    
+                    // تغییر در تابع update برای غیرفعال کردن بازی در منوها
+                    const originalUpdate = update;
+                    update = function(timestamp) {
+                        if (gameActive) {
+                            originalUpdate(timestamp);
+                        }
+                    };
+                    
+                    // تغییر در تابع checkCollisions
+                    const originalCheckCollisions = checkCollisions;
+                    checkCollisions = function() {
+                        if (gameActive) {
+                            originalCheckCollisions();
+                        }
+                    };
+                    
+                    // تغییر در تابع endGame
+                    const originalEndGame = endGame;
+                    endGame = function() {
+                        if (gameActive) {
+                            originalEndGame();
+                        }
+                    };
+                    
+                    // تغییر در رویدادهای کلیک برای دکمه‌های سطح دشواری
+                    document.getElementById('easyBtn').addEventListener('click', function() {
+                        startGame('easy');
+                    });
+                    
+                    document.getElementById('mediumBtn').addEventListener('click', function() {
+                        startGame('medium');
+                    });
+                    
+                    document.getElementById('hardBtn').addEventListener('click', function() {
+                        startGame('hard');
+                    });
+                    
+                    // غیرفعال کردن بازی در ابتدا
+                    window.addEventListener('DOMContentLoaded', function() {
+                        gameReady = false;
+                        gameActive = false;
+                        
+                        // مخفی کردن عناصر بازی
+                        document.getElementById('gameCanvas').style.display = 'none';
+                        document.getElementById('gameInfo').style.display = 'none';
+                        document.getElementById('gameOver').style.display = 'none';
+                    });
+                    </script>
+                    <script>
+                        // ========== کد بهینه سازی نمایش در موبایل ==========
+                        
+                        // تابع تشخیص دستگاه موبایل
+                        function isMobile() {
+                          return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                        }
+                        
+                        // تابع تنظیم اندازه کانواس برای موبایل
+                        function setupMobileCanvas() {
+                          if (!isMobile()) return;
+                        
+                          const canvas = document.getElementById('gameCanvas');
+                          const gameInfo = document.getElementById('gameInfo');
+                          const windowWidth = window.innerWidth;
+                          const windowHeight = window.innerHeight;
+                          
+                          // محاسبه نسبت ابعاد مناسب (16:9)
+                          const targetRatio = 16 / 9;
+                          let canvasWidth, canvasHeight;
+                          
+                          if (windowWidth / windowHeight > targetRatio) {
+                            // عرض زیاد است (لنداسکیپ)
+                            canvasHeight = Math.min(windowHeight, 600);
+                            canvasWidth = canvasHeight * targetRatio;
+                          } else {
+                            // ارتفاع زیاد است (پرتره)
+                            canvasWidth = Math.min(windowWidth, 800);
+                            canvasHeight = canvasWidth / targetRatio;
+                          }
+                          
+                          // اعمال اندازه جدید
+                          canvas.width = canvasWidth;
+                          canvas.height = canvasHeight;
+                          
+                          // تنظیم استایل برای نمایش مناسب
+                          canvas.style.width = '100%';
+                          canvas.style.height = 'auto';
+                          canvas.style.maxWidth = canvasWidth + 'px';
+                          canvas.style.maxHeight = canvasHeight + 'px';
+                          canvas.style.margin = '10px auto';
+                          
+                          // تنظیم فونت اطلاعات بازی
+                          if (gameInfo) {
+                            gameInfo.style.fontSize = '16px';
+                            gameInfo.style.width = '95%';
+                            gameInfo.style.padding = '8px';
+                          }
+                          
+                          // نمایش پیام برای حالت پرتره
+                          if (windowHeight > windowWidth) {
+                            showOrientationAlert();
+                          }
+                        }
+                        
+                        // نمایش هشدار جهت چرخش صفحه
+                        function showOrientationAlert() {
+                          const existingAlert = document.getElementById('orientationAlert');
+                          if (existingAlert) return;
+                          
+                          const alertDiv = document.createElement('div');
+                          alertDiv.id = 'orientationAlert';
+                          alertDiv.innerHTML = `
+                            <div style="
+                              position: fixed;
+                              top: 0;
+                              left: 0;
+                              width: 100%;
+                              height: 100%;
+                              background: rgba(0,0,0,0.9);
+                              display: flex;
+                              flex-direction: column;
+                              justify-content: center;
+                              align-items: center;
+                              z-index: 9999;
+                              color: white;
+                              text-align: center;
+                              padding: 20px;
+                            ">
+                              <h2>برای تجربه بهتر بازی</h2>
+                              <p>لطفاً دستگاه خود را به حالت افقی بچرخانید</p>
+                              <div style="font-size: 50px; margin: 20px;">↻</div>
+                              <p>بازی به صورت خودکار تنظیم خواهد شد</p>
+                            </div>
+                          `;
+                          
+                          document.body.appendChild(alertDiv);
+                        }
+                        
+                        // مخفی کردن هشدار جهت
+                        function hideOrientationAlert() {
+                          const alertDiv = document.getElementById('orientationAlert');
+                          if (alertDiv) {
+                            alertDiv.remove();
+                          }
+                        }
+                        
+                        // رویداد تغییر اندازه پنجره
+                        window.addEventListener('resize', function() {
+                          setupMobileCanvas();
+                          if (window.innerWidth > window.innerHeight) {
+                            hideOrientationAlert();
+                          }
+                        });
+                        
+                        // اجرای اولیه هنگام بارگذاری
+                        window.addEventListener('load', function() {
+                          setupMobileCanvas();
+                          
+                          // استایل‌های اضافی برای موبایل
+                          const style = document.createElement('style');
+                          style.textContent = `
+                            @media (max-width: 768px) {
+                              body {
+                                overflow: auto;
+                                touch-action: manipulation;
+                              }
+                              #gameCanvas {
+                                background-size: contain !important;
+                                background-position: center center !important;
+                              }
+                              .mobile-control {
+                                display: flex !important;
+                              }
+                            }
+                          `;
+                          document.head.appendChild(style);
+                        });
+                        </script>
+<script>
+    // ========== کد مدیریت تصاویر اسکین نینجا ==========
+    
+    // تعریف اسکین نینجا با منابع جایگزین
+    const ninjaSkin = {
+        player: [
+            'https://postimg.cc/34K3BGxL',
+            'https://previews.dropbox.com/p/thumb/AClmmLUhG0Wcp-7Yh4TXzxgMBTXKG62jD_u_DNn54sRClUluZi9Nr51iW6JsIM1YLQuD3EvfN0ux5FohrGBtFqTG2m9TdfEKJGPTiX06Urt-PZHZN9VolLRAwbOSIgRxRN4Rk9SIFBa1N13uQjVjcdyZS3aehtN4Qss1bc04OR_cm5jW4ngpiHmzJh32SC2NNXSAAYE7DOynPKJaG8qWHv1ESZ9x2AbQsHWINzLHRB2JzkqgrOZfNQs1QhghsNlYVZZ6phXFlgHxWJI2RUSue6l2eo8ja06s7DCOswwYDN4GjjEeaa3pZjHQM6JaKi1O2dosQbuk2g8zpmw6C9zOK743/p.jpeg?is_prewarmed=true' // لینک جایگزین
+        ],
+        bullet: [
+            'https://www.dropbox.com/scl/fi/6t3mkk5bn1ykabz1s1auv/1-scaled.png?rlkey=maogyrnlme05uxljgcmffc90o&st=da06idla&dl=0',
+            'https://i.ibb.co/0jQY9hX/ninja-bullet-backup.png' // لینک جایگزین
+        ]
+    };
+    
+    // تابع لود تصویر با سیستم جایگزین
+    function loadNinjaSkin() {
+        // لود تصویر بازیکن
+        const playerImg = new Image();
+        playerImg.onload = function() {
+            images.player.src = this.src;
+        };
+        playerImg.onerror = function() {
+            console.log('خطا در لود تصویر نینجا، استفاده از تصویر جایگزین');
+            images.player.src = ninjaSkin.player[1];
+        };
+        playerImg.src = ninjaSkin.player[0];
+    
+        // لود تصویر تیر
+        const bulletImg = new Image();
+        bulletImg.onload = function() {
+            images.playerBullet.src = this.src;
+        };
+        bulletImg.onerror = function() {
+            console.log('خطا در لود تصویر تیر نینجا، استفاده از تصویر جایگزین');
+            images.playerBullet.src = ninjaSkin.bullet[1];
+        };
+        bulletImg.src = ninjaSkin.bullet[0];
+    }
+    
+    // تغییر در رویداد انتخاب اسکین نینجا
+    document.querySelector('.skin-option[data-skin="ninja"]').addEventListener('click', function() {
+        currentSkin = 'ninja';
+        loadNinjaSkin();
+        
+        // علامت‌گذاری اسکین انتخاب شده
+        document.querySelectorAll('.skin-option').forEach(opt => {
+            opt.classList.remove('selected');
+        });
+        this.classList.add('selected');
+    });
+    
+    // پیش‌بارگذاری تصاویر نینجا
+    function preloadNinjaImages() {
+        const preloadPlayer = new Image();
+        preloadPlayer.src = ninjaSkin.player[0];
+        
+        const preloadBullet = new Image();
+        preloadBullet.src = ninjaSkin.bullet[0];
+        
+        // پیش‌لود تصاویر جایگزین هم
+        const preloadBackupPlayer = new Image();
+        preloadBackupPlayer.src = ninjaSkin.player[1];
+        
+        const preloadBackupBullet = new Image();
+        preloadBackupBullet.src = ninjaSkin.bullet[1];
+    }
+    
+    // اجرای پیش‌بارگذاری هنگام لود صفحه
+    window.addEventListener('load', preloadNinjaImages);
+    </script>
+    <script>
+        // ========== کد بهینه‌سازی برای موبایل ==========
+        
+        // تابع تشخیص دستگاه موبایل
+        function isMobile() {
+          return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+        
+        // تنظیمات صفحه برای موبایل
+        function optimizeForMobile() {
+          if (!isMobile()) return;
+        
+          // تنظیم viewport برای جلوگیری از زوم ناخواسته
+          const viewportMeta = document.createElement('meta');
+          viewportMeta.name = 'viewport';
+          viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+          document.head.appendChild(viewportMeta);
+        
+          // تنظیم سایز کانواس
+          const canvas = document.getElementById('gameCanvas');
+          const windowWidth = window.innerWidth;
+          const windowHeight = window.innerHeight;
+          
+          // محاسبه اندازه مناسب با حفظ نسبت تصویر
+          const targetRatio = 16 / 9;
+          let canvasWidth, canvasHeight;
+          
+          if (windowWidth / windowHeight > targetRatio) {
+            // حالت لنداسکیپ
+            canvasHeight = windowHeight * 0.9;
+            canvasWidth = canvasHeight * targetRatio;
+          } else {
+            // حالت پرتره
+            canvasWidth = windowWidth * 0.95;
+            canvasHeight = canvasWidth / targetRatio;
+          }
+          
+          // اعمال اندازه جدید
+          canvas.width = canvasWidth;
+          canvas.height = canvasHeight;
+          canvas.style.width = canvasWidth + 'px';
+          canvas.style.height = canvasHeight + 'px';
+          canvas.style.maxWidth = '100%';
+          canvas.style.maxHeight = '90vh';
+          canvas.style.margin = '10px auto';
+        
+          // تنظیم فونت و استایل اطلاعات بازی
+          const gameInfo = document.getElementById('gameInfo');
+          if (gameInfo) {
+            gameInfo.style.width = '95%';
+            gameInfo.style.fontSize = '18px';
+            gameInfo.style.padding = '10px';
+            gameInfo.style.margin = '5px auto';
+          }
+        
+          // تنظیم کنترل‌های موبایل
+          setupMobileControls();
+        }
+        
+        // تنظیم کنترل‌های لمسی
+        function setupMobileControls() {
+          const controls = document.querySelectorAll('.mobile-control');
+          controls.forEach(control => {
+            control.style.display = 'flex';
+          });
+        
+          // تنظیم موقعیت دکمه‌ها
+          const upBtn = document.getElementById('up-btn');
+          const downBtn = document.getElementById('down-btn');
+          const fireBtn = document.getElementById('fire-btn');
+          const enterBtn = document.getElementById('enter-btn');
+        
+          if (upBtn && downBtn) {
+            upBtn.style.bottom = '150px';
+            upBtn.style.right = '20px';
+            upBtn.style.transform = 'none';
+            upBtn.style.width = '80px';
+            upBtn.style.height = '80px';
+            upBtn.style.fontSize = '30px';
+        
+            downBtn.style.bottom = '50px';
+            downBtn.style.right = '20px';
+            downBtn.style.transform = 'none';
+            downBtn.style.width = '80px';
+            downBtn.style.height = '80px';
+            downBtn.style.fontSize = '30px';
+          }
+        
+          if (fireBtn) {
+            fireBtn.style.bottom = '100px';
+            fireBtn.style.left = '20px';
+            fireBtn.style.width = '80px';
+            fireBtn.style.height = '80px';
+          }
+        
+          if (enterBtn) {
+            enterBtn.style.bottom = '20px';
+            enterBtn.style.left = '50%';
+            enterBtn.style.transform = 'translateX(-50%)';
+            enterBtn.style.width = '150px';
+            enterBtn.style.height = '50px';
+            enterBtn.style.fontSize = '18px';
+          }
+        }
+        
+        // نمایش هشدار برای حالت پرتره
+        function showPortraitWarning() {
+          if (window.innerHeight > window.innerWidth) {
+            const warningDiv = document.createElement('div');
+            warningDiv.id = 'portraitWarning';
+            warningDiv.innerHTML = `
+              <div style="
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                z-index: 9999;
+                color: white;
+                text-align: center;
+                padding: 20px;
+              ">
+                <h2>برای تجربه بهتر</h2>
+                <p>لطفاً دستگاه خود را به حالت افقی بچرخانید</p>
+                <div style="font-size: 50px; margin: 20px;">↻</div>
+              </div>
+            `;
+            document.body.appendChild(warningDiv);
+          }
+        }
+        
+        // مخفی کردن هشدار حالت پرتره
+        function hidePortraitWarning() {
+          const warning = document.getElementById('portraitWarning');
+          if (warning) {
+            warning.remove();
+          }
+        }
+        
+        // رویداد تغییر سایز پنجره
+        window.addEventListener('resize', function() {
+          optimizeForMobile();
+          if (window.innerWidth > window.innerHeight) {
+            hidePortraitWarning();
+          } else {
+            showPortraitWarning();
+          }
+        });
+        
+        // اجرای تنظیمات هنگام بارگذاری
+        window.addEventListener('load', function() {
+          optimizeForMobile();
+          showPortraitWarning();
+          
+          // استایل‌های اضافی برای موبایل
+          const style = document.createElement('style');
+          style.textContent = `
+            @media (max-width: 768px) {
+              body {
+                overflow: hidden;
+                touch-action: manipulation;
+                background-color: #000;
+              }
+              #gameCanvas {
+                background-size: contain;
+                background-position: center;
+              }
+              .game-over {
+                width: 90% !important;
+                padding: 20px !important;
+              }
+              .game-over h1 {
+                font-size: 28px !important;
+              }
+              .game-over p {
+                font-size: 18px !important;
+              }
+            }
+          `;
+          document.head.appendChild(style);
+        });
+        </script>
+    <script>
+        // ========== کد مدیریت شروع بازی پس از انتخاب سطح سختی ==========
+        
+        // 1. متغیرهای کنترل حالت بازی
+        let gameInitialized = false;
+        let gameRunning = false;
+        let currentDifficulty = 'medium'; // سطح پیش‌فرض
+        
+        // 2. غیرفعال کردن بازی در ابتدا
+        document.getElementById('gameCanvas').style.display = 'none';
+        document.getElementById('gameInfo').style.display = 'none';
+        
+        // 3. تابع شروع بازی پس از انتخاب سطح سختی
+        function startGameAfterDifficultySelect(difficulty) {
+            currentDifficulty = difficulty;
+            
+            // اعمال تنظیمات سطح سختی (می‌توانید مقادیر را تنظیم کنید)
+            switch(difficulty) {
+                case 'easy':
+                    gameState.enemy.speed = 4;
+                    gameState.enemy.health = 80;
+                    gameState.enemy.shotDelay = 1500;
+                    break;
+                case 'medium':
+                    gameState.enemy.speed = 5;
+                    gameState.enemy.health = 100;
+                    gameState.enemy.shotDelay = 1200;
+                    break;
+                case 'hard':
+                    gameState.enemy.speed = 6;
+                    gameState.enemy.health = 120;
+                    gameState.enemy.shotDelay = 900;
+                    break;
+                case 'devil':
+                    gameState.enemy.speed = 7;
+                    gameState.enemy.health = 1000;
+                    gameState.enemy.shotDelay = 100;
+                    break;
+            }
+        
+            // فعال کردن بازی
+            gameInitialized = true;
+            gameRunning = true;
+            
+            // نمایش عناصر بازی
+            document.getElementById('gameCanvas').style.display = 'block';
+            document.getElementById('gameInfo').style.display = 'block';
+            
+            // ریست وضعیت بازی
+            resetGameState();
+            
+            console.log('بازی با سطح سختی ' + difficulty + ' شروع شد');
+        }
+        
+        // 4. تابع ریست وضعیت بازی
+        function resetGameState() {
+            // ریست وضعیت بازیکن
+            gameState.player.health = 100;
+            gameState.player.bullets = [];
+            gameState.player.lastShot = 0;
+            
+            // ریست وضعیت دشمن
+            gameState.enemy.health = 100;
+            gameState.enemy.bullets = [];
+            gameState.enemy.lastShot = 0;
+            
+            // ریست سایر وضعیت‌ها
+            gameState.gameOver = false;
+            gameState.confetti = [];
+            
+            // به روزرسانی نمایش سلامت
+            document.getElementById('playerHealth').textContent = '100';
+            document.getElementById('enemyHealth').textContent = '100';
+            
+            // مخفی کردن صفحه پایان بازی
+            document.getElementById('gameOver').style.display = 'none';
+        }
+        
+        // 5. تغییر تابع gameLoop برای جلوگیری از اجرای خودکار
+        const originalGameLoop = gameLoop;
+        gameLoop = function(timestamp) {
+            if (gameRunning) {
+                originalGameLoop(timestamp);
+            } else {
+                requestAnimationFrame(gameLoop);
+            }
+        };
+        
+        // 6. تغییر در تابع update برای غیرفعال کردن بازی در منوها
+        const originalUpdate = update;
+        update = function(timestamp) {
+            if (gameRunning) {
+                originalUpdate(timestamp);
+            }
+        };
+        
+        // 7. تغییر در رویدادهای کلیک برای دکمه‌های سطح سختی
+        document.getElementById('easyBtn').addEventListener('click', function() {
+            startGameAfterDifficultySelect('easy');
+        });
+        
+        document.getElementById('mediumBtn').addEventListener('click', function() {
+            startGameAfterDifficultySelect('medium');
+        });
+        
+        document.getElementById('hardBtn').addEventListener('click', function() {
+            startGameAfterDifficultySelect('hard');
+        });
+        
+        document.getElementById('comingSoonBtn').addEventListener('click', function() {
+            startGameAfterDifficultySelect('devil');
+        });
+        
+        // 8. تغییر در تابع endGame برای جلوگیری از نمایش نادرست
+        const originalEndGame = endGame;
+        endGame = function() {
+            if (gameRunning) {
+                originalEndGame();
+            }
+        };
+        
+        // 9. تغییر در تابع checkCollisions
+        const originalCheckCollisions = checkCollisions;
+        checkCollisions = function() {
+            if (gameRunning) {
+                originalCheckCollisions();
+            }
+        };
+        
+        // 10. شروع اولیه
+        window.addEventListener('DOMContentLoaded', function() {
+            // غیرفعال کردن حلقه بازی تا زمان انتخاب سطح سختی
+            gameRunning = false;
+            
+            // اطمینان از مخفی بودن عناصر بازی
+            document.getElementById('gameCanvas').style.display = 'none';
+            document.getElementById('gameInfo').style.display = 'none';
+            document.getElementById('gameOver').style.display = 'none';
+            
+            // شروع حلقه بازی (اما غیرفعال)
+            requestAnimationFrame(gameLoop);
+            
+            console.log('منتظر انتخاب سطح سختی توسط کاربر...');
+        });
+        </script>
+        <script>
+            // ======== کد تضمینی برای سطح شیطانی بدون قفل ========
+            
+            // 1. ابتدا مطمئن می‌شویم منوی سختی وجود دارد
+            const difficultyMenu = document.getElementById('difficultyMenu');
+            
+            if (difficultyMenu) {
+                // 2. حذف کامل هرگونه دکمه قفل شده قبلی
+                const oldComingSoonBtn = document.getElementById('comingSoonBtn');
+                if (oldComingSoonBtn) {
+                    oldComingSoonBtn.remove();
+                }
+        
+                // 3. ایجاد دکمه جدید سطح شیطانی
+                const devilBtn = document.createElement('button');
+                devilBtn.id = 'devilBtn';
+                devilBtn.className = 'difficultyBtn';
+                devilBtn.textContent = '👹 سطح شیطانی 👹';
+                
+                // 4. استایل دهی به دکمه
+                devilBtn.style.background = 'linear-gradient(135deg, #8B0000, #FF0000)';
+                devilBtn.style.color = 'white';
+                devilBtn.style.border = '2px solid #FF0000';
+                devilBtn.style.boxShadow = '0 0 10px #FF0000';
+                
+                // 5. اضافه کردن دکمه به منو (بعد از دکمه سخت)
+                const hardBtn = document.getElementById('hardBtn');
+                if (hardBtn) {
+                    hardBtn.after(devilBtn);
+                } else {
+                    difficultyMenu.appendChild(devilBtn);
+                }
+                
+                // 6. اضافه کردن تنظیمات سطح شیطانی
+                difficultySettings.devil = {
+                    damage: 100,  // آسیب بسیار زیاد
+                    speed: 8,     // سرعت بسیار بالا
+                    health: 200,  // سلامت زیاد دشمن
+                    shotDelay: 600 // تاخیر کم بین شلیک‌ها
+                };
+                
+                // 7. فعال کردن کلیک روی دکمه
+                devilBtn.addEventListener('click', function() {
+                    startGame('devil');
+                });
+                
+                // 8. اضافه کردن جامپ اسکر هنگام باخت
+                const originalEndGame = endGame;
+                endGame = function() {
+                    if (currentDifficulty === 'devil' && gameState.player.health <= 0) {
+                        // ایجاد افکت ترسناک
+                        const jumpScare = document.createElement('div');
+                        jumpScare.style.position = 'fixed';
+                        jumpScare.style.top = '0';
+                        jumpScare.style.left = '0';
+                        jumpScare.style.width = '100%';
+                        jumpScare.style.height = '100%';
+                        jumpScare.style.background = 'black url("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSNwPYRGtxal3jn0gkHB0JTtm04XQIFnnsOKw&s") center/cover no-repeat';
+                        jumpScare.style.zIndex = '5';
+                        jumpScare.style.animation = 'scare 0.3s forwards';
+                        
+                        document.body.appendChild(jumpScare);
+                        
+                        // پخش صدای ترسناک
+                        const scream = new Audio('https://biaupload.com/static/files-2025-04/org-8ae4afc88b3b1.mp3');
+                        scream.play();
+                        
+                        setTimeout(() => {
+                            jumpScare.remove();
+                            originalEndGame();
+                        }, 2000);
+                    } else {
+                        originalEndGame();
+                    }
+                };
+                
+                // 9. اضافه کردن استایل‌های لازم
+                const style = document.createElement('style');
+                style.textContent = `
+                    @keyframes scare {
+                        0% { transform: scale(1); opacity: 0; }
+                        100% { transform: scale(1.1); opacity: 1; }
+                    }
+                    #devilBtn:hover {
+                        transform: scale(1.05);
+                        box-shadow: 0 0 20px #FF0000;
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                console.log('سطح شیطانی با موفقیت فعال شد!');
+            } else {
+                console.error('منوی سختی پیدا نشد!');
+            }
+        </script>
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بازی با سطح شیطانی</title>
+    <style>
+        /* استایل‌های پایه */
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #111;
+            color: white;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #player {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background-color: red;
+            border-radius: 50%;
+            transition: transform 0.1s;
+        }
+        
+        .particle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        
+        /* منوی دشواری */
+        #difficultyMenu {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
